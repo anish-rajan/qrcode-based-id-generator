@@ -1,0 +1,5 @@
+type,payload,signature_mapper,pretty_spaces
+cwt,,-1,-1
+json,,"['DateIssued','Issuer','subject','alg']",2
+
+

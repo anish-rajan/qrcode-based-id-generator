@@ -9,15 +9,47 @@ import img2pdf
 from PIL import Image
 import os
 import json
+import csv
+from ast import literal_eval
+from fpdf import FPDF
+import re
 
-def convert_img_to_pdf(img_file, pdf_name):
+
+def flatten_json(payload):
+    final_payload = dict()
+    for key in payload:
+        if type(payload[key]) is dict:
+            temp_payload = flatten_json(payload[key])
+            for key in temp_payload:
+                final_payload[key] = temp_payload[key]
+        else:
+            final_payload[key] = payload[key]
+    return final_payload
+
+
+def convert_img_to_pdf(img_file, pdf_name, initial_payload):
     pdf_path = "./Output/{0}".format(pdf_name)
-    image = Image.open(img_file)
-    pdf_bytes = img2pdf.convert(image.filename)
-    file = open(pdf_path, "wb")
-    file.write(pdf_bytes)
-    image.close()
-    file.close()
+    pdf = FPDF()
+    pdf.add_page()
+    pdf.set_font("Times", size=10)
+    line_height = pdf.font_size * 2.5
+    col_width = pdf.epw / 8  # distribute content evenly
+    payload = flatten_json(initial_payload)
+    for key in payload:
+        if key == "img":
+            data = bytes.fromhex(str(payload[key])[2:])
+            with open('image.png', 'wb') as file:
+                file.write(data)
+            pdf.image('image.png', x=100, y=60)
+        else:
+            pdf.multi_cell(col_width, line_height, key, border=1,
+                new_x="RIGHT", new_y="TOP", max_line_height=pdf.font_size)
+            pdf.multi_cell(col_width, line_height, payload[key], border=1,
+                    new_x="RIGHT", new_y="TOP", max_line_height=pdf.font_size)
+            pdf.ln(line_height)
+    img = Image.open(img_file).resize((300,300),resample=Image.NEAREST)
+    pdf.image(img, x=100, y=80)
+    pdf.output(pdf_path)
 
 
 
@@ -36,13 +68,65 @@ def cwt_qr_generator(payload, private_key_file):
     qr_code = pyqrcode.create(b64string,error='L')
     qr_code.png('qr_code.png', scale = 6)
 
-def ver0_qr_generator(payload, private_key):
+def ver0_qr_generator(initial_payload, private_key, signature_mapper, pretty_spaces):
     privKey = ed25519.SigningKey(private_key,encoding='hex')
-    payload = str(payload)
-    signature = privKey.sign(bytes(payload, 'utf-8'), encoding='hex')
-    qr_code = pyqrcode.create(signature)
+    payload = initial_payload.copy()
+    signature_payload = dict()
+    signature_mapper = literal_eval(signature_mapper)
+    for item in signature_mapper:
+        signature_payload[item] = payload[item] 
+    if pretty_spaces!=-1:
+        signature_payload = json.dumps(signature_payload, indent=pretty_spaces)
+    signature = privKey.sign(bytes(signature_payload, 'utf-8'), encoding='base64')
+    signature = str(signature)
+    payload["signature"] = signature
+    payload = json.dumps(payload)
+    qr_code = pyqrcode.create(payload)
     qr_code.png('qr_code.png', scale = 6)
 
+def create_qrs_csv_input(input_path, config_file, ver0_private_key, cwt_private_key):
+    n = len(sys.argv)
+    if n > 1:
+        type_qr_code = sys.argv[1]
+    else:
+        type_qr_code = "json"
+    csv.register_dialect('piper', delimiter='|', quoting=csv.QUOTE_NONE)
+    file_obj_config = open(config_file)
+    inputs = json.load(file_obj_config)
+    configs = dict()
+    for type in inputs:
+        if type['type'] == 'json':
+            configs['json'] = dict()
+            configs['json']['payload'] = type['payload']
+            configs['json']['signature_mapper'] = type['signature_mapper']
+            configs['json']['pretty_spaces'] = type['pretty_spaces']
+        elif type['type'] == 'cwt':
+            configs['cwt'] = dict()
+            configs['cwt']['payload'] = type['payload']
+
+    with open(input_path) as file_obj:
+
+        reader_obj = csv.DictReader(file_obj, dialect='piper')
+        for row in reader_obj:
+            json_str = replace_variables(configs[type_qr_code]['payload'], row)
+            if type_qr_code == 'cwt':
+                cwt_qr_generator(json_str, cwt_private_key)
+                convert_img_to_pdf("./qr_code.png",row["vid"],json_str)
+            elif type_qr_code == 'json':
+                ver0_qr_generator(json_str,ver0_private_key,configs['json']['signature_mapper'],configs['json']['pretty_spaces'])
+                convert_img_to_pdf("./qr_code.png",row["vid"],json_str)
+            
+def replace_variables(payload, values):
+    final_payload = dict()
+    for key in payload:
+        if type(payload[key]) is dict:
+            final_payload[key] = replace_variables(payload[key],values)
+        elif payload[key][0] == '{':
+            temp_var = payload[key]
+            final_payload[key] = values[temp_var[1:-1]]
+        else:
+            final_payload[key] = payload[key]
+    return final_payload
 
 def create_qrs(inputs_path, ver0_private_key, cwt_private_key):
     file_obj = open(inputs_path)
@@ -64,24 +148,8 @@ def create_qrs(inputs_path, ver0_private_key, cwt_private_key):
 if __name__ == '__main__':
     private_key = b'e21ffeb4072328eddaa435d5a5920422af7dfe7b76fece04391f172b1131b2db'
     private_key_file = "./private_key.pem"
-    cwt_payload = {
-            "i":"PSA",
-            "d":"2022-09-6",
-            "img":"h""52494646B00100005745425056503820A4010000300B009D012A2D003A003F1178B3532C2724A2AD566A4980220969001363CDFDAEB264156FA14EADD91927F3FBF5CA5ED9A12C659102FD59D969F22C09B013A25F52A3D0513DB76FE9E11C9E135B0D37A6BE47884C245EDA9926490AA765A58D120000FC3B347BD1DD693DF3E7D53F9D1A0C91834889DF8C8CBD92EEBA140417033DB23E928F4F38AF5C0576F768C2AFC25D439FFBBC2E39C9B9AFE4CD8F24606155412702532C45D15D5357329A4792BA4DB8346114C087E046FD9DBEE82EB36648CDB32ACDD14F946F56F67563D363A7E953C461015DB97268971707ABD6D5B8A5AE8C5D273A1A88AAE3CA55F4061D701AB939C3825FEB4972AFA65A593277165D30FD3DFA4CA83DF998CCDF806D5420550ED57BE6F865BBE8FFF2F93174B258C4B76BB0CC144A2793C12F94869BD2079463172B7ABE08035C0882F6F7124F825A45550005D1BD2C992821CB820FE8032764609BAF9F8B0029162C97B9F6BAF67036137B7587B100B83CAFF227807E49E883894E9459A400D5164C61D87DCCE1508F3E9A1C9D4C4785F37FE8999799B62E7FE6B1C7E06B7C3AACA19C70E840B0000000",
-            "sb":{
-                "s":"Male",
-                "PCN":"1484187209471956",
-                "ln":"Mercado Y Realonda",
-                "POB":"CITY OF MARIKINA, NCR, CITY OF MANILA, FIRST DISTRICT",
-                "sf":"Sophomore",
-                "DOB":"1990-05-27",
-                "fn":"Arnold Chezella Paulina",
-                "mn":"Oninco",
-                "BF":"[1,2]"
-            }
-        }
     # cwt_qr_generator(cwt_payload, private_key_file)
     # convert_img_to_pdf("./qr_code.png")
-    create_qrs("./input.json",private_key, private_key_file)
+    create_qrs_csv_input("./test-import.csv","config.json",private_key, private_key_file)
 
     

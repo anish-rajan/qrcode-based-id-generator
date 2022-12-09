@@ -1,0 +1,42 @@
+[
+    {
+        "payload": {
+            "DateIssued": "21 September 2021",
+            "Issuer": "PSA",
+            "subject": {
+                "Suffix": "{suffix}",
+                "lName": "{lastname}",
+                "fName": "{firstname}",
+                "mName": "{middlename}",
+                "sex": "{gender}",
+                "BF": "{BF}",
+                "DOB": "{dateOfBirth}",
+                "POB": "{addressLine1}",
+                "PCN": "{postalCode}"
+            },
+            "alg": "EDDSA"
+        },
+        "type": "json",
+        "signature_mapper": "['DateIssued','Issuer','subject','alg']",
+        "pretty_spaces": 2
+    },
+    {
+        "payload": {
+            "i": "PSA",
+            "d": "2022-09-6",
+            "img": "{img}",
+            "sb": {
+                "s": "{gender}",
+                "PCN": "{postalCode}",
+                "ln": "{lastname}",
+                "POB": "{addressLine1}",
+                "sf": "{suffix}",
+                "DOB": "{dateOfBirth}",
+                "fn": "{firstname}",
+                "mn": "{middlename}",
+                "BF": "{BF}"
+            }
+        },
+        "type": "cwt"
+    }
+]
