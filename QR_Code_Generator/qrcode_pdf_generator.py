@@ -65,6 +65,7 @@ def cwt_qr_generator(payload, private_key_file):
         private_key,
     )
     b64string = codecs.encode(codecs.decode(token.hex(), 'hex'), 'base64').decode()
+    b64string = "PH1:" + b64string
     qr_code = pyqrcode.create(b64string,error='L')
     qr_code.png('qr_code.png', scale = 6)
 
